@@ -16,7 +16,7 @@ template<class T> constexpr bool is_duration_v = is_specialization_v<T, std::chr
 class Timer
 {
 public:
-	Timer() :expired_(true) {}
+	Timer() :expired_(true), done_ {}
 	~Timer(){
 		Stop();
 	}
@@ -24,18 +24,21 @@ public:
 	template<typename durt, typename = std::enable_if_t<is_duration_v<durt>>>
 	void Start(durt interval, std::function<void()> task){
 		expired_ = false;
+		done_ = false;
 		std::thread([&, interval, task]() {
 			while (!expired_){
 				std::unique_lock<std::mutex> locker(mutex_);
 				if (expired_cond_.wait_for(locker, std::chrono::duration_cast<std::chrono::milliseconds>(interval), [&]() {return expired_ == true; })) break; else task();
 			}
+			done_ = true;
 		}).detach();
 	}
 
 	void Stop()
 	{
 		expired_ = true;
-		expired_cond_.notify_one();
+		while (!done_);
+		done_ = true;
 	}
 
 	template<typename durt, typename callable, class... arguments, typename = std::enable_if_t<is_duration_v<durt>> >
@@ -57,7 +60,7 @@ public:
 		});
 	}
 private:
-	std::atomic<bool> expired_;
+	std::atomic<bool> expired_, done_;
 	std::mutex mutex_;
 	std::condition_variable expired_cond_;
 };
